@@ -1,3 +1,4 @@
+if (typeof File === 'undefined') { global.File = class File extends Blob { constructor(chunks, name, opts) { super(chunks, opts); this.name = name; } }; }
 'use strict';
 const express = require('express');
 const path    = require('path');
