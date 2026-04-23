@@ -1,5 +1,5 @@
-if (typeof File === 'undefined') { global.File = class File extends Blob { constructor(chunks, name, opts) { super(chunks, opts); this.name = name; } }; }
 'use strict';
+if (typeof File === 'undefined') { global.File = class File extends Blob { constructor(chunks, name, opts) { super(chunks, opts); this.name = name; } }; }
 const express = require('express');
 const path    = require('path');
 const cron    = require('node-cron');
@@ -26,6 +26,17 @@ function buildWhere(q, topic, date_from, date_to) {
   return { where: conds.join(' AND '), args, nextI: i };
 }
 
+// 本周日报（最近7天）
+app.get('/api/reports/today', async (req, res) => {
+  const db = getDb();
+  const rows = await db.query(
+    "SELECT * FROM reports WHERE pub_date >= (CURRENT_DATE - interval '7 days')::text ORDER BY pub_date DESC, id DESC",
+    []
+  );
+  const today = new Date().toISOString().split('T')[0];
+  res.json({ data: rows.rows, date: today });
+});
+
 app.get('/api/reports', async (req, res) => {
   const { q='', topic='', date_from='', date_to='', page=1, limit=100 } = req.query;
   const { where, args, nextI } = buildWhere(q, topic, date_from, date_to);
@@ -35,22 +46,15 @@ app.get('/api/reports', async (req, res) => {
   res.json({ data: rows.rows, total: parseInt(count.rows[0]?.c ?? 0) });
 });
 
-app.get('/api/reports/today', async (req, res) => {
-  const today = new Date().toISOString().split('T')[0];
-  const db = getDb();
-  const rows = await db.query('SELECT * FROM reports WHERE pub_date=$1 ORDER BY id DESC', [today]);
-  res.json({ data: rows.rows, date: today });
-});
-
 app.get('/api/stats', async (req, res) => {
   const db = getDb();
-  const [total, today, byTopic, recentDays] = await Promise.all([
+  const [total, thisWeek, byTopic, recentDays] = await Promise.all([
     db.query('SELECT COUNT(*) as c FROM reports'),
-    db.query("SELECT COUNT(*) as c FROM reports WHERE pub_date=CURRENT_DATE::text"),
+    db.query("SELECT COUNT(*) as c FROM reports WHERE pub_date >= (CURRENT_DATE - interval '7 days')::text"),
     db.query('SELECT topic, COUNT(*) as c FROM reports GROUP BY topic ORDER BY c DESC'),
     db.query("SELECT pub_date, COUNT(*) as c FROM reports WHERE pub_date >= (CURRENT_DATE - interval '30 days')::text GROUP BY pub_date ORDER BY pub_date DESC"),
   ]);
-  res.json({ total: parseInt(total.rows[0]?.c??0), today: parseInt(today.rows[0]?.c??0), byTopic: byTopic.rows, recentDays: recentDays.rows });
+  res.json({ total: parseInt(total.rows[0]?.c??0), today: parseInt(thisWeek.rows[0]?.c??0), byTopic: byTopic.rows, recentDays: recentDays.rows });
 });
 
 app.get('/api/sources', async (req, res) => { const r = await getDb().query('SELECT * FROM sources ORDER BY id'); res.json(r.rows); });
@@ -99,11 +103,6 @@ app.get('/api/export/:format', async (req, res) => {
     else if (format==='pdf') { const file=await exportPDF(rows.rows,`日报_${dateTag}.pdf`); res.download(file,path.basename(file)); }
     else res.status(400).json({error:'不支持的格式'});
   } catch(e) { res.status(500).json({error:e.message}); }
-});
-
-app.post('/api/fetch', (req, res) => {
-  res.json({ ok: true, message: '抓取任务已启动' });
-  runCrawler().catch(console.error);
 });
 
 cron.schedule('0 8 * * *', () => { runCrawler().catch(console.error); }, {timezone:'Asia/Shanghai'});
