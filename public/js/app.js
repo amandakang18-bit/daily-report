@@ -11,7 +11,7 @@ document.addEventListener('DOMContentLoaded', () => {
 function setDefaults() {
   const today = new Date().toISOString().split('T')[0];
   document.getElementById('today-title').textContent =
-    '今日日报 · ' + new Date().toLocaleDateString('zh-CN', { month: 'long', day: 'numeric' });
+    '本周日报 · ' + new Date().toLocaleDateString('zh-CN', { month: 'long', day: 'numeric' });
   const toEl = document.getElementById('h-to');
   if (toEl) toEl.value = today;
   const fromEl = document.getElementById('h-from');
