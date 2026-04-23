@@ -1,29 +1,24 @@
 'use strict';
-const { createClient } = require('@libsql/client');
+const { Pool } = require('pg');
 
-// 从环境变量读取 Turso 连接信息
-// 本地开发时自动退回到本地文件
+let pool;
+
 function getDb() {
-  if (process.env.TURSO_URL) {
-    return createClient({
-      url:       process.env.TURSO_URL,
-      authToken: process.env.TURSO_TOKEN,
+  if (!pool) {
+    pool = new Pool({
+      connectionString: process.env.DATABASE_URL,
+      ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false,
     });
   }
-  // 本地开发：用本地 SQLite 文件（需要安装 @libsql/client）
-  const path = require('path');
-  const fs   = require('fs');
-  const dir  = path.join(__dirname, '../../data');
-  fs.mkdirSync(dir, { recursive: true });
-  return createClient({ url: 'file:' + path.join(dir, 'reports.db') });
+  return pool;
 }
 
 async function initDb() {
   const db = getDb();
 
-  await db.executeMultiple(`
+  await db.query(`
     CREATE TABLE IF NOT EXISTS reports (
-      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      id         SERIAL PRIMARY KEY,
       title      TEXT NOT NULL,
       org        TEXT,
       source     TEXT,
@@ -33,10 +28,11 @@ async function initDb() {
       summary_ai INTEGER DEFAULT 0,
       tags       TEXT,
       pub_date   TEXT,
-      fetched_at TEXT DEFAULT (datetime('now','localtime'))
+      fetched_at TIMESTAMP DEFAULT NOW(),
+      UNIQUE(url, title)
     );
     CREATE TABLE IF NOT EXISTS sources (
-      id       INTEGER PRIMARY KEY AUTOINCREMENT,
+      id       SERIAL PRIMARY KEY,
       name     TEXT NOT NULL,
       url      TEXT NOT NULL,
       type     TEXT NOT NULL,
@@ -45,12 +41,12 @@ async function initDb() {
       active   INTEGER DEFAULT 1
     );
     CREATE TABLE IF NOT EXISTS keywords (
-      id      INTEGER PRIMARY KEY AUTOINCREMENT,
+      id      SERIAL PRIMARY KEY,
       keyword TEXT UNIQUE NOT NULL,
       topic   TEXT
     );
     CREATE TABLE IF NOT EXISTS topics (
-      id    INTEGER PRIMARY KEY AUTOINCREMENT,
+      id    SERIAL PRIMARY KEY,
       name  TEXT UNIQUE NOT NULL,
       color TEXT DEFAULT 'blue'
     );
@@ -60,15 +56,13 @@ async function initDb() {
 
   // 主题
   const topicData = [
-    ['组织管理','blue'],
-    ['人才管理','teal'],
-    ['其他','gray'],
+    ['组织管理','blue'],['人才管理','teal'],['其他','gray'],
   ];
   for (const [name, color] of topicData) {
-    await db.execute({
-      sql: 'INSERT OR IGNORE INTO topics(name,color) VALUES(?,?)',
-      args: [name, color],
-    });
+    await db.query(
+      'INSERT INTO topics(name,color) VALUES($1,$2) ON CONFLICT(name) DO NOTHING',
+      [name, color]
+    );
   }
 
   // 关键词
@@ -90,10 +84,10 @@ async function initDb() {
     ['AI替代','人才管理'],['AI赋能','人才管理'],['AI Agent','人才管理'],
   ];
   for (const [keyword, topic] of kwData) {
-    await db.execute({
-      sql: 'INSERT OR IGNORE INTO keywords(keyword,topic) VALUES(?,?)',
-      args: [keyword, topic],
-    });
+    await db.query(
+      'INSERT INTO keywords(keyword,topic) VALUES($1,$2) ON CONFLICT(keyword) DO NOTHING',
+      [keyword, topic]
+    );
   }
 
   // 来源
@@ -106,10 +100,10 @@ async function initDb() {
     ['HRflag·研究报告','https://reports.hrflag.com/','html','a[href*="Report/detail"], a[href*="report"], .report-title a, h3 a','人才管理'],
   ];
   for (const [name, url, type, selector, topic] of srcData) {
-    await db.execute({
-      sql: 'INSERT OR IGNORE INTO sources(name,url,type,selector,topic) VALUES(?,?,?,?,?)',
-      args: [name, url, type, selector, topic],
-    });
+    await db.query(
+      'INSERT INTO sources(name,url,type,selector,topic) VALUES($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING',
+      [name, url, type, selector, topic]
+    );
   }
 
   console.log('✅ 数据库初始化完成');
