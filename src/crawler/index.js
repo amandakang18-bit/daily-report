@@ -147,23 +147,23 @@ async function fetchHTML(source, keywords) {
 
 async function runCrawler() {
   const db       = getDb();
-  const sources  = (await db.execute('SELECT * FROM sources WHERE active=1')).rows;
-  const keywords = (await db.execute('SELECT keyword, topic FROM keywords')).rows;
+  const sources  = (await db.query('SELECT * FROM sources WHERE active=1')).rows;
+  const keywords = (await db.query('SELECT keyword, topic FROM keywords')).rows;
 
   for (const src of sources) {
-    console.log(`[抓取] ${src.name} ...`);
+    console.log('[抓取] ' + src.name + ' ...');
     const items = src.type === 'rss' ? await fetchRSS(src, keywords) : await fetchHTML(src, keywords);
     let newCount = 0;
     for (const item of items) {
       try {
-        await db.execute({
-          sql: 'INSERT OR IGNORE INTO reports(title,org,source,url,topic,summary,summary_ai,tags,pub_date) VALUES(?,?,?,?,?,?,?,?,?)',
-          args: [item.title, item.org, item.source, item.url, item.topic, item.summary, item.summary_ai, item.tags, item.pub_date],
-        });
+        await db.query(
+          'INSERT INTO reports(title,org,source,url,topic,summary,summary_ai,tags,pub_date) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT DO NOTHING',
+          [item.title, item.org, item.source, item.url, item.topic, item.summary, item.summary_ai, item.tags, item.pub_date]
+        );
         newCount++;
-      } catch {}
+      } catch(e) { console.warn('插入失败:', e.message); }
     }
-    console.log(`  → ${items.length} 条，入库 ${newCount} 条`);
+    console.log('  -> ' + items.length + ' 条，入库 ' + newCount + ' 条');
     await new Promise(r => setTimeout(r, 1000));
   }
   console.log('✅ 抓取完成');
@@ -171,3 +171,4 @@ async function runCrawler() {
 
 module.exports = { runCrawler };
 if (require.main === module) runCrawler().catch(console.error);
+
