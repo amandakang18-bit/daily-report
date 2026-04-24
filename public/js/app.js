@@ -18,7 +18,6 @@ function setDefaults() {
   if (fromEl) { const d = new Date(); d.setDate(d.getDate() - 30); fromEl.value = d.toISOString().split('T')[0]; }
 }
 
-// ── 导航 ────────────────────────────────────────────────────────
 function showPage(name, el) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
@@ -28,14 +27,12 @@ function showPage(name, el) {
   if (name === 'config')  { loadConfig(); }
 }
 
-// ── 统计 ─────────────────────────────────────────────────────────
 async function loadStats() {
   const data = await api('/api/stats');
   document.getElementById('s-today').textContent = data.today ?? '—';
   document.getElementById('s-total').textContent = data.total ?? '—';
 }
 
-// ── 今日 ─────────────────────────────────────────────────────────
 async function loadTodayReports() {
   const data = await api('/api/reports/today');
   document.getElementById('today-sub').textContent = `${data.date} · 共 ${data.data.length} 条`;
@@ -67,7 +64,6 @@ function setStatus(color, msg) {
   bar.innerHTML = `<div class="dot dot-${color}"></div><span>${msg}</span>`;
 }
 
-// ── 历史 ─────────────────────────────────────────────────────────
 async function loadTopics() {
   S.topics = await api('/api/topics');
   renderTopicChips();
@@ -107,7 +103,6 @@ async function loadHistory() {
   renderPagination(data.total, 80, S.historyPage, 'h-pagination', p => { S.historyPage = p; loadHistory(); });
 }
 
-// ── 渲染报告组 ───────────────────────────────────────────────────
 function topicClass(topic) {
   if (topic === '组织管理') return 'org';
   if (topic === '人才管理') return 'talent';
@@ -125,14 +120,9 @@ function tagClass(tag) {
 function renderReportGroups(rows, containerId) {
   const el = document.getElementById(containerId);
   if (!rows || !rows.length) { el.innerHTML = '<div class="empty-state">暂无数据</div>'; return; }
-
   const grouped = {};
   const ORDER = ['组织管理', '人才管理', '其他'];
-  rows.forEach(r => {
-    const t = r.topic || '其他';
-    (grouped[t] = grouped[t] || []).push(r);
-  });
-
+  rows.forEach(r => { const t = r.topic || '其他'; (grouped[t] = grouped[t] || []).push(r); });
   el.innerHTML = ORDER.filter(t => grouped[t]?.length).map(topic => {
     const items = grouped[topic];
     const tc = topicClass(topic);
@@ -145,9 +135,7 @@ function renderReportGroups(rows, containerId) {
         ${items.map(r => {
           const tags = (r.tags || '').split(',').filter(Boolean);
           const tagsHtml = tags.map(t => `<span class="tag ${tagClass(t)}">${esc(t)}</span>`).join('');
-          const summaryHtml = r.summary
-            ? `<div class="r-summary">${esc(r.summary)}</div>`
-            : '';
+          const summaryHtml = r.summary ? `<div class="r-summary">${esc(r.summary)}</div>` : '';
           return `<div class="report-row">
             <div class="r-date">${r.pub_date || ''}</div>
             <div>
@@ -166,7 +154,6 @@ function renderReportGroups(rows, containerId) {
   }).join('');
 }
 
-// ── 导出 ─────────────────────────────────────────────────────────
 function exportData(format) {
   const q     = document.getElementById('h-search')?.value || '';
   const from  = document.getElementById('h-from')?.value || '';
@@ -176,7 +163,7 @@ function exportData(format) {
   window.open('/api/export/' + format + '?' + params, '_blank');
 }
 
-// ── 配置 ─────────────────────────────────────────────────────────
+// ── 配置管理 ─────────────────────────────────────────────────
 async function loadConfig() {
   const [sources, keywords, topics] = await Promise.all([
     api('/api/sources'), api('/api/keywords'), api('/api/topics'),
@@ -189,6 +176,7 @@ async function loadConfig() {
         <div class="config-row-sub">${esc(s.url)}</div>
       </div>
       <div class="config-row-actions">
+        <button class="btn-sm" onclick="openEditSource(${s.id})">编辑</button>
         <button class="btn-sm" onclick="toggleSource(${s.id},${s.active ? 0 : 1})">${s.active ? '停用' : '启用'}</button>
         <button class="btn-danger" onclick="deleteItem('sources',${s.id})">删除</button>
       </div>
@@ -211,6 +199,45 @@ async function loadConfig() {
     </span>`).join('') + '</div>';
 }
 
+// ── 编辑来源（新增功能）──────────────────────────────────────
+async function openEditSource(id) {
+  const sources = await api('/api/sources');
+  const s = sources.find(x => x.id === id);
+  if (!s) return;
+
+  document.getElementById('modal-title').textContent = '编辑抓取来源';
+  document.getElementById('modal-body').innerHTML = `
+    <div class="form-row"><label>名称 *</label><input id="f-name" value="${esc(s.name)}"></div>
+    <div class="form-row"><label>URL *</label><input id="f-url" value="${esc(s.url)}"></div>
+    <div class="form-row"><label>类型 *</label>
+      <select id="f-type">
+        <option value="rss" ${s.type==='rss'?'selected':''}>RSS Feed</option>
+        <option value="html" ${s.type==='html'?'selected':''}>HTML 抓取</option>
+      </select></div>
+    <div class="form-row"><label>CSS 选择器（HTML 模式）</label><input id="f-selector" value="${esc(s.selector||'')}"></div>
+    <div class="form-row"><label>默认主题</label>
+      <select id="f-topic">
+        <option value="组织管理" ${s.topic==='组织管理'?'selected':''}>组织管理</option>
+        <option value="人才管理" ${s.topic==='人才管理'?'selected':''}>人才管理</option>
+        <option value="其他" ${s.topic==='其他'?'selected':''}>其他</option>
+      </select></div>`;
+
+  document.getElementById('modal-confirm').onclick = async () => {
+    const name = document.getElementById('f-name').value.trim();
+    const url  = document.getElementById('f-url').value.trim();
+    const type = document.getElementById('f-type').value;
+    if (!name || !url) { showToast('请填写名称和 URL'); return; }
+    await api('/api/sources/' + id, 'PUT', {
+      name, url, type,
+      selector: document.getElementById('f-selector').value.trim(),
+      topic: document.getElementById('f-topic').value,
+      active: s.active,
+    });
+    closeModal(); loadConfig(); showToast('✅ 来源已更新');
+  };
+  showModal();
+}
+
 async function toggleSource(id, active) {
   const src = (await api('/api/sources')).find(s => s.id === id);
   if (!src) return;
@@ -220,19 +247,18 @@ async function toggleSource(id, active) {
 
 async function deleteItem(type, id) {
   if (!confirm('确认删除？')) return;
-  await api('/' + 'api/' + type + '/' + id, 'DELETE');
+  await api('/api/' + type + '/' + id, 'DELETE');
   loadConfig(); showToast('已删除');
 }
 
-// ── Modals ───────────────────────────────────────────────────────
 function openAddSource() {
   document.getElementById('modal-title').textContent = '添加抓取来源';
   document.getElementById('modal-body').innerHTML = `
-    <div class="form-row"><label>名称 *</label><input id="f-name" placeholder="如：三个皮匠·新报告"></div>
+    <div class="form-row"><label>名称 *</label><input id="f-name" placeholder="如：麦肯锡中国·洞见"></div>
     <div class="form-row"><label>URL *</label><input id="f-url" placeholder="https://..."></div>
     <div class="form-row"><label>类型 *</label>
       <select id="f-type"><option value="rss">RSS Feed</option><option value="html">HTML 抓取</option></select></div>
-    <div class="form-row"><label>CSS 选择器（HTML 模式）</label><input id="f-selector" placeholder="a.title, h3 a"></div>
+    <div class="form-row"><label>CSS 选择器（HTML 模式）</label><input id="f-selector" placeholder="h3 a, .title a"></div>
     <div class="form-row"><label>默认主题</label>
       <select id="f-topic"><option value="组织管理">组织管理</option><option value="人才管理">人才管理</option><option value="其他">其他</option></select></div>`;
   document.getElementById('modal-confirm').onclick = async () => {
@@ -279,7 +305,6 @@ function openAddTopic() {
 function showModal()  { document.getElementById('modal-overlay').classList.remove('hidden'); }
 function closeModal() { document.getElementById('modal-overlay').classList.add('hidden'); }
 
-// ── 分页 ─────────────────────────────────────────────────────────
 function renderPagination(total, limit, current, elId, cb) {
   const pages = Math.ceil(total / limit);
   const el = document.getElementById(elId);
@@ -294,7 +319,6 @@ function renderPagination(total, limit, current, elId, cb) {
   el.innerHTML = html;
 }
 
-// ── utils ────────────────────────────────────────────────────────
 async function api(url, method = 'GET', body = null) {
   const opts = { method, headers: { 'Content-Type': 'application/json' } };
   if (body) opts.body = JSON.stringify(body);
@@ -312,4 +336,27 @@ function showToast(msg) {
   t.textContent = msg; t.classList.remove('hidden');
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => t.classList.add('hidden'), 3000);
+}
+
+// ── 批量导入 ─────────────────────────────────────────────────
+async function doImport() {
+  const fileInput = document.getElementById('import-file');
+  const result = document.getElementById('import-result');
+  if (!fileInput.files.length) { showToast('请先选择 Excel 文件'); return; }
+  result.textContent = '导入中...';
+  const fd = new FormData();
+  fd.append('file', fileInput.files[0]);
+  try {
+    const res = await fetch('/api/import/upload', { method: 'POST', body: fd });
+    const data = await res.json();
+    if (data.ok) {
+      result.textContent = `✅ 成功导入 ${data.inserted} 条，跳过重复 ${data.skipped} 条`;
+      showToast('✅ 导入完成！');
+      await loadStats();
+    } else {
+      result.textContent = '❌ ' + (data.error || '导入失败');
+    }
+  } catch(e) {
+    result.textContent = '❌ 网络错误，请重试';
+  }
 }
